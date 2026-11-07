@@ -1,0 +1,17 @@
+name: Offline tests
+
+on:
+  push:
+    paths:
+      - "contracts/**"
+      - "tests/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run offline tests
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
