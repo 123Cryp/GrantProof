@@ -1,0 +1,3 @@
+GrantProof test evidence: report written for a different wallet.
+
+Report for wallet 0x99E48bA122EF86cC09315969fB09FF2e93c0A514: design document and repository skeleton published. Status: delivered.
