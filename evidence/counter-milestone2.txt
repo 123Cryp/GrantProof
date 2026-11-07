@@ -1,0 +1,3 @@
+GrantProof test evidence: review note used as counter evidence.
+
+Review of the milestone 2 report of 0xaCd8005C272258a67A41A4e926398ABfFEc6dC9E: version 0.1.0 was withdrawn on review. The test suite does not run and the claimed 12 passing tests cannot be reproduced. The working version required by milestone 2 was not delivered.
