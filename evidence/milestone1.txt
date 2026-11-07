@@ -1,0 +1,3 @@
+GrantProof test evidence: milestone 1 report.
+
+Grantee 0xaCd8005C272258a67A41A4e926398ABfFEc6dC9E published the design document for the project and a public repository skeleton. Both deliverables are public. Status: delivered.
