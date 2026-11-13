@@ -627,6 +627,9 @@ class TestChallenge(Base):
         self.assertEqual(self.bal(BOB), 0)
         m = self.ms(self.gid, 1)
         self.assertEqual(m["state"], "APPROVED")
+        with self.assertRaises(Exception):
+            self.call(DAVE, "finalize_milestone", self.gid, 1)
+        CLOCK[0] += CHW + 1
         self.call(DAVE, "finalize_milestone", self.gid, 1)
         self.assertEqual(self.bal(GRANTEE), 12 * WEI)
 
@@ -637,6 +640,7 @@ class TestChallenge(Base):
         self.assertEqual(out["result"], "UNDETERMINED_REFUND")
         self.assertEqual(self.bal(BOB), 2 * WEI)
         self.assertEqual(self.ms(self.gid, 1)["state"], "APPROVED")
+        CLOCK[0] += CHW + 1
         self.call(DAVE, "finalize_milestone", self.gid, 1)
 
     def test_challenge_guards_refund_instead_of_revert(self):
@@ -695,6 +699,7 @@ class TestChallenge(Base):
         self.call(DAVE, "cancel_challenge", self.gid, 1)
         self.assertEqual(self.bal(BOB), 2 * WEI)
         self.assertEqual(self.ms(self.gid, 1)["state"], "APPROVED")
+        CLOCK[0] += CHW + 1
         self.call(DAVE, "finalize_milestone", self.gid, 1)
         self.assertEqual(self.ms(self.gid, 1)["state"], "PAID")
 
@@ -710,6 +715,87 @@ class TestChallenge(Base):
     def test_funder_may_challenge(self):
         res = self.call(FUNDER, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
         self.assertEqual(res, "CHALLENGED")
+
+    def test_unavailable_counter_url_does_not_shorten_or_consume_challenge(self):
+        original_end = self.ms(self.gid, 1)["challenge_end"]
+        CLOCK[0] += CHW - 10
+        res = self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+        out = json.loads(self.call(DAVE, "resolve_challenge", self.gid, 1))
+        self.assertEqual(out["result"], "UNDETERMINED_REFUND")
+        m = self.ms(self.gid, 1)
+        self.assertEqual(m["state"], "APPROVED")
+        self.assertFalse(m["challenged"])
+        self.assertGreaterEqual(m["challenge_end"], original_end)
+        self.assertGreaterEqual(m["challenge_end"], CLOCK[0] + CHW)
+        with self.assertRaises(Exception):
+            self.call(DAVE, "finalize_milestone", self.gid, 1)
+        self.assertEqual(self.bal(BOB), 2 * WEI)
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+        out = json.loads(self.call(DAVE, "resolve_challenge", self.gid, 1))
+        self.assertEqual(out["result"], "UPHELD")
+        self.assertEqual(self.ms(self.gid, 1)["state"], "OPEN")
+
+    def test_resolution_after_original_window_still_allows_later_challenge(self):
+        self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+        CLOCK[0] += CHW + 100
+        self.call(DAVE, "resolve_challenge", self.gid, 1)
+        m = self.ms(self.gid, 1)
+        self.assertGreater(m["challenge_end"], CLOCK[0])
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+
+    def test_failed_challenge_also_keeps_window_open_for_a_later_challenge(self):
+        stub.chain.pages[url_for("noise")] = "Unrelated note about something else entirely."
+        self.call(BOB, "challenge_milestone", self.gid, 1, url_for("noise"), value=2 * WEI)
+        out = json.loads(self.call(DAVE, "resolve_challenge", self.gid, 1))
+        self.assertEqual(out["result"], "REJECTED")
+        self.assertFalse(self.ms(self.gid, 1)["challenged"])
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+
+    def test_stale_challenge_cancel_restores_challenge_opportunity(self):
+        self.call(BOB, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        CLOCK[0] += 3 * 86400 + 1
+        self.call(DAVE, "cancel_challenge", self.gid, 1)
+        m = self.ms(self.gid, 1)
+        self.assertFalse(m["challenged"])
+        self.assertGreaterEqual(m["challenge_end"], CLOCK[0] + CHW)
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+
+    def test_reopen_is_bounded_and_never_shortens_the_window(self):
+        for i in range(2):
+            self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+            self.call(DAVE, "resolve_challenge", self.gid, 1)
+            self.assertFalse(self.ms(self.gid, 1)["challenged"])
+        before = self.ms(self.gid, 1)["challenge_end"]
+        self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+        self.call(DAVE, "resolve_challenge", self.gid, 1)
+        m = self.ms(self.gid, 1)
+        self.assertTrue(m["challenged"])
+        self.assertEqual(m["challenge_end"], before)
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertTrue(res.startswith("REJECTED:"))
+        with self.assertRaises(Exception):
+            self.call(DAVE, "finalize_milestone", self.gid, 1)
+        CLOCK[0] = before
+        self.call(DAVE, "finalize_milestone", self.gid, 1)
+        self.assertEqual(self.ms(self.gid, 1)["state"], "PAID")
+
+    def test_new_submission_resets_reopen_counter(self):
+        self.call(BOB, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.call(DAVE, "resolve_challenge", self.gid, 1)
+        self.assertEqual(self.ms(self.gid, 1)["reopens"], 0)
+        self.approve(self.gid, 1, "m1b")
+        self.assertEqual(self.ms(self.gid, 1)["reopens"], 0)
+
+    def test_funder_cannot_use_unavailable_url_to_force_early_payout(self):
+        self.call(FUNDER, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+        self.call(DAVE, "resolve_challenge", self.gid, 1)
+        with self.assertRaises(Exception):
+            self.call(DAVE, "finalize_milestone", self.gid, 1)
 
     def test_clawback_cannot_touch_challenged_milestone(self):
         self.call(BOB, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)

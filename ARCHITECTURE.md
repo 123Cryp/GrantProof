@@ -30,9 +30,9 @@ PENDING --stale 3 days, expire_submission--> OPEN
 APPROVED --challenge_milestone (once per submission, before challenge_end)--> CHALLENGED
 APPROVED --finalize_milestone after challenge_end--> PAID (next milestone opens)
 CHALLENGED --resolve REJECTED (upheld)--> OPEN (challenger gets bond + 10% of the share, the share shrinks by that bounty)
-CHALLENGED --resolve APPROVED--> APPROVED, finalizable now (grantee gets the bond)
-CHALLENGED --resolve UNDETERMINED--> APPROVED, finalizable now (bond refunded)
-CHALLENGED --stale 3 days, cancel_challenge--> APPROVED, finalizable now (bond refunded)
+CHALLENGED --resolve APPROVED (challenge failed)--> APPROVED, window restored (grantee gets the bond)
+CHALLENGED --resolve UNDETERMINED--> APPROVED, window restored (bond refunded)
+CHALLENGED --stale 3 days, cancel_challenge--> APPROVED, window restored (bond refunded)
 OPEN --deadline passed or 3 submissions used, clawback--> CLAWED_BACK
 WAITING --an earlier milestone was clawed back, clawback--> CLAWED_BACK
 ```
@@ -42,6 +42,8 @@ Every state has a path to a terminal state without trusting any single party:
 - PENDING, CHALLENGED and APPROVED can be advanced by anyone.
 - OPEN is either completed by the grantee or clawed back by the funder.
 - DRAFT is cancelled by the funder, who is the only party with funds in it.
+
+A challenge that does not uphold (failed, undetermined or cancelled) never shortens the challenge window and never uses up the submission's challenge opportunity: the milestone returns to APPROVED with `challenge_end = max(original end, now + challenge window)` and may be challenged again. This is bounded to 2 restorations per submission (`MAX_REOPENS`); after that the original window is kept unchanged and no further challenge is accepted, so a stream of junk challenges cannot delay a payout indefinitely. An unavailable counter-evidence URL therefore costs the funder or third party nothing but also gains them nothing, and cannot block a later valid challenge.
 
 A milestone approved before its deadline keeps its right to be paid even if the finalization happens after the deadline; the deadline only limits submissions.
 

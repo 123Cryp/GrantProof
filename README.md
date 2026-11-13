@@ -16,7 +16,7 @@ Milestone-based grant payouts verified by GenLayer validators. A funder locks re
 
 1. **Address anchor.** The grantee's own address must appear in the fetched evidence page, checked in deterministic code before any model call.
 2. **Grounded verdict.** APPROVED is downgraded to UNDETERMINED unless the model returns an exact quote that really occurs in the fetched page.
-3. **Bonded challenge.** The funder or any third party (never the grantee) can stake exactly 2 GEN against an approval before payout. The milestone is re-judged with the counter-evidence. An upheld challenge returns the bond plus a 10% bounty taken from that milestone's share and sends the milestone back to OPEN for a new submission. A failed challenge forfeits the bond to the grantee.
+3. **Bonded challenge.** The funder or any third party (never the grantee) can stake exactly 2 GEN against an approval before payout. The milestone is re-judged with the counter-evidence. An upheld challenge returns the bond plus a 10% bounty taken from that milestone's share and sends the milestone back to OPEN for a new submission. A failed or undetermined challenge never shortens the challenge window or blocks a later valid challenge (bounded to 2 restorations per submission); a failed one forfeits the bond to the grantee.
 
 ## Contract
 

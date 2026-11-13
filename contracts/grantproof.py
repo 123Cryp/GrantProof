@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 WEI = 10 ** 18
 MAX_ATTEMPTS = 3
 MAX_SUBMISSIONS = 3
+MAX_REOPENS = 2
 BOND_GEN = 2
 BOUNTY_BPS = 1000
 EVAL_TIMEOUT = 3 * 86400
@@ -289,6 +290,12 @@ class GrantProof(gl.Contract):
         if all(s in ("PAID", "CLAWED_BACK") for s in states):
             g["state"] = "COMPLETED" if all(s == "PAID" for s in states) else "CLOSED"
 
+    def _reopen(self, g, m, now):
+        m["reopens"] += 1
+        if m["reopens"] <= MAX_REOPENS:
+            m["challenged"] = False
+            m["challenge_end"] = max(m["challenge_end"], now + g["chw"])
+
     def _halted(self, g):
         for m in g["milestones"]:
             if m["state"] == "CLAWED_BACK":
@@ -397,6 +404,7 @@ class GrantProof(gl.Contract):
                 "last_activity": 0,
                 "challenge_end": 0,
                 "challenged": False,
+                "reopens": 0,
                 "challenger": "",
                 "challenge_url": "",
                 "challenge_filed": 0,
@@ -470,6 +478,7 @@ class GrantProof(gl.Contract):
         m["reason"] = ""
         m["quote"] = ""
         m["challenged"] = False
+        m["reopens"] = 0
         m["challenger"] = ""
         m["challenge_url"] = ""
         m["challenge_result"] = ""
@@ -583,13 +592,13 @@ class GrantProof(gl.Contract):
         elif verdict == "APPROVED":
             self._credit(g["grantee"], bond)
             m["state"] = "APPROVED"
-            m["challenge_end"] = now
             m["challenge_result"] = "REJECTED"
+            self._reopen(g, m, now)
         else:
             self._credit(m["challenger"], bond)
             m["state"] = "APPROVED"
-            m["challenge_end"] = now
             m["challenge_result"] = "UNDETERMINED_REFUND"
+            self._reopen(g, m, now)
         m["bond"] = 0
         self._save_grant(g)
         return json.dumps({"verdict": verdict, "result": m["challenge_result"], "state": m["state"]})
@@ -609,9 +618,9 @@ class GrantProof(gl.Contract):
         self._credit(m["challenger"], bond)
         m["bond"] = 0
         m["state"] = "APPROVED"
-        m["challenge_end"] = now
         m["challenge_result"] = "CANCELLED_REFUND"
         m["last_activity"] = now
+        self._reopen(g, m, now)
         self._save_grant(g)
         return "APPROVED"
 
