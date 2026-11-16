@@ -765,22 +765,47 @@ class TestChallenge(Base):
         res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
         self.assertEqual(res, "CHALLENGED")
 
-    def test_reopen_is_bounded_and_never_shortens_the_window(self):
+    def test_free_retries_then_forfeit_and_window_always_restored(self):
         for i in range(2):
             self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
-            self.call(DAVE, "resolve_challenge", self.gid, 1)
+            out = json.loads(self.call(DAVE, "resolve_challenge", self.gid, 1))
+            self.assertEqual(out["result"], "UNDETERMINED_REFUND")
             self.assertFalse(self.ms(self.gid, 1)["challenged"])
         before = self.ms(self.gid, 1)["challenge_end"]
+        bob_before = self.bal(BOB)
         self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
-        self.call(DAVE, "resolve_challenge", self.gid, 1)
+        out = json.loads(self.call(DAVE, "resolve_challenge", self.gid, 1))
+        self.assertEqual(out["result"], "UNDETERMINED_FORFEIT")
+        self.assertEqual(self.bal(BOB), bob_before)
         m = self.ms(self.gid, 1)
-        self.assertTrue(m["challenged"])
-        self.assertEqual(m["challenge_end"], before)
-        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
-        self.assertTrue(res.startswith("REJECTED:"))
+        self.assertFalse(m["challenged"])
+        self.assertEqual(m["state"], "APPROVED")
+        self.assertGreaterEqual(m["challenge_end"], before)
+        self.assertGreaterEqual(m["challenge_end"], CLOCK[0] + CHW)
         with self.assertRaises(Exception):
             self.call(DAVE, "finalize_milestone", self.gid, 1)
-        CLOCK[0] = before
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+        out = json.loads(self.call(DAVE, "resolve_challenge", self.gid, 1))
+        self.assertEqual(out["result"], "UPHELD")
+        self.assertEqual(self.ms(self.gid, 1)["state"], "OPEN")
+
+    def test_junk_challenge_at_window_end_cannot_block_valid_challenge_after_cap(self):
+        for i in range(3):
+            self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+            self.call(DAVE, "resolve_challenge", self.gid, 1)
+        CLOCK[0] = self.ms(self.gid, 1)["challenge_end"] - 1
+        self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+        CLOCK[0] += 30
+        self.call(DAVE, "resolve_challenge", self.gid, 1)
+        res = self.call(CAROL, "challenge_milestone", self.gid, 1, url_for("revoked"), value=2 * WEI)
+        self.assertEqual(res, "CHALLENGED")
+
+    def test_payout_after_last_window_when_nobody_challenges(self):
+        for i in range(3):
+            self.call(BOB, "challenge_milestone", self.gid, 1, url_for("not-published"), value=2 * WEI)
+            self.call(DAVE, "resolve_challenge", self.gid, 1)
+        CLOCK[0] = self.ms(self.gid, 1)["challenge_end"]
         self.call(DAVE, "finalize_milestone", self.gid, 1)
         self.assertEqual(self.ms(self.gid, 1)["state"], "PAID")
 

@@ -1,4 +1,4 @@
-# v0.2.16
+# v0.2.18
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 WEI = 10 ** 18
 MAX_ATTEMPTS = 3
 MAX_SUBMISSIONS = 3
-MAX_REOPENS = 2
+FREE_REOPENS = 2
 BOND_GEN = 2
 BOUNTY_BPS = 1000
 EVAL_TIMEOUT = 3 * 86400
@@ -292,9 +292,8 @@ class GrantProof(gl.Contract):
 
     def _reopen(self, g, m, now):
         m["reopens"] += 1
-        if m["reopens"] <= MAX_REOPENS:
-            m["challenged"] = False
-            m["challenge_end"] = max(m["challenge_end"], now + g["chw"])
+        m["challenged"] = False
+        m["challenge_end"] = max(m["challenge_end"], now + g["chw"])
 
     def _halted(self, g):
         for m in g["milestones"]:
@@ -595,9 +594,13 @@ class GrantProof(gl.Contract):
             m["challenge_result"] = "REJECTED"
             self._reopen(g, m, now)
         else:
-            self._credit(m["challenger"], bond)
+            if m["reopens"] < FREE_REOPENS:
+                self._credit(m["challenger"], bond)
+                m["challenge_result"] = "UNDETERMINED_REFUND"
+            else:
+                self._credit(g["grantee"], bond)
+                m["challenge_result"] = "UNDETERMINED_FORFEIT"
             m["state"] = "APPROVED"
-            m["challenge_result"] = "UNDETERMINED_REFUND"
             self._reopen(g, m, now)
         m["bond"] = 0
         self._save_grant(g)
